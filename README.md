@@ -12,14 +12,14 @@ docker compose up --build
 
 - Web: http://localhost:3000
 - API: http://localhost:4000/health and http://localhost:4000/health/ready
-- MinIO console: http://localhost:9001 (minioadmin / minioadmin)
+- Object storage console (RustFS): http://localhost:9001 (devaccesskey / devsecretkey-change-me)
 
 ## Local development
 
 ```sh
 pnpm install
 cp .env.example .env
-docker compose up -d postgres redis minio minio-init
+docker compose up -d postgres redis storage storage-init
 pnpm migrate
 pnpm dev            # web + api
 pnpm --filter @appeal/api dev:worker

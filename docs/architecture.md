@@ -3,7 +3,7 @@
 ```
 Browser ──> web (Next.js, :3000) ──fetch, cookies──> api (Express, :4000)
                                                       │  ├─ Postgres + pgvector (Drizzle)
-                                                      │  ├─ MinIO / R2 (S3 API) — documents
+                                                      │  ├─ RustFS / R2 (S3 API) — documents
                                                       │  └─ Redis ──> BullMQ ──> worker (AI jobs)
 ```
 
