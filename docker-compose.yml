@@ -70,8 +70,8 @@ services:
       postgres: { condition: service_healthy }
 
   api:
-    build: { context: ., dockerfile: infra/docker/api.Dockerfile }
     image: appeal-ai/api:dev
+    pull_policy: never # built by the migrate service
     environment: *api-env
     ports: ['4000:4000']
     depends_on:
@@ -91,8 +91,8 @@ services:
       retries: 10
 
   worker:
-    build: { context: ., dockerfile: infra/docker/api.Dockerfile }
     image: appeal-ai/api:dev
+    pull_policy: never # built by the migrate service
     command: ['node', 'dist/worker.js']
     environment: *api-env
     depends_on:
