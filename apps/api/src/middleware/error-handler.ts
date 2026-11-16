@@ -23,6 +23,10 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
         details: err.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
       },
     };
+  } else if (isUniqueViolation(err)) {
+    // e.g. two concurrent registrations with the same email.
+    status = 409;
+    body = { error: { code: 'CONFLICT', message: 'This already exists' } };
   } else if (isBodyParseError(err)) {
     status = 400;
     body = { error: { code: 'VALIDATION_ERROR', message: 'Malformed request body' } };
@@ -31,6 +35,15 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   if (status >= 500) req.log?.error({ err }, 'unhandled error');
   res.status(status).json(body);
 };
+
+/** Postgres 23505, possibly wrapped by Drizzle (DrizzleQueryError.cause). */
+function isUniqueViolation(err: unknown): boolean {
+  for (let e: unknown = err, depth = 0; e && depth < 3; depth++) {
+    if (typeof e === 'object' && 'code' in e && e.code === '23505') return true;
+    e = typeof e === 'object' && 'cause' in e ? e.cause : undefined;
+  }
+  return false;
+}
 
 function isBodyParseError(err: unknown): boolean {
   return (

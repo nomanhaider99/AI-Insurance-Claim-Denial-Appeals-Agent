@@ -1,6 +1,5 @@
-import { Router } from 'express';
+import { Router, type RequestHandler } from 'express';
 import type { AppConfig } from '../../config.js';
-import { requireAuth } from '../../middleware/auth.js';
 import type { authLimiters } from '../../middleware/rate-limit.js';
 import { authController } from './auth.controller.js';
 import type { AuthService } from './auth.service.js';
@@ -32,19 +31,20 @@ export function authRouter(deps: {
   service: AuthService;
   config: AppConfig;
   limiters: ReturnType<typeof authLimiters>;
+  requireAuth: RequestHandler;
 }): Router {
   const c = authController(deps.service, deps.config);
-  const { login, sensitive, refresh } = deps.limiters;
+  const l = deps.limiters;
   const r = Router();
 
   r.get('/csrf', c.csrf);
-  r.post('/register', sensitive, c.register);
-  r.post('/login', login, c.login);
-  r.post('/refresh', refresh, c.refresh);
+  r.post('/register', l.register, c.register);
+  r.post('/login', ...l.login, c.login);
+  r.post('/refresh', l.refresh, c.refresh);
   r.post('/logout', c.logout);
-  r.get('/me', requireAuth(deps.config.jwtAccessSecret), c.me);
-  r.post('/password/forgot', sensitive, c.forgotPassword);
-  r.post('/password/reset', sensitive, c.resetPassword);
-  r.post('/invites/accept', sensitive, c.acceptInvite);
+  r.get('/me', deps.requireAuth, c.me);
+  r.post('/password/forgot', ...l.forgot, c.forgotPassword);
+  r.post('/password/reset', l.reset, c.resetPassword);
+  r.post('/invites/accept', l.invite, c.acceptInvite);
   return r;
 }

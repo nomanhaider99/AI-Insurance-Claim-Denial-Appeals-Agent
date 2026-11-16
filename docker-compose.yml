@@ -17,7 +17,13 @@ x-api-env: &api-env
   APP_URL: http://localhost:3000
   # Local stack is plain http; production must keep Secure cookies.
   COOKIE_SECURE: 'false'
-  MAIL_TRANSPORT: console
+  # Console mail logs reset/invite links, so it's refused with NODE_ENV=production.
+  # For the reset/invite flows locally, run the API with `pnpm dev` instead.
+  MAIL_TRANSPORT: disabled
+  # Next.js doesn't append X-Forwarded-For, so trust no proxy here (see env.ts).
+  TRUST_PROXY: 0
+  # Local demo stack only: create synthetic demo orgs/users with a documented password.
+  SEED_DEMO_DATA: 'true'
 
 services:
   postgres:

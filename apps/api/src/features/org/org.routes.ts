@@ -1,6 +1,6 @@
-import { Router } from 'express';
+import { Router, type RequestHandler } from 'express';
 import { permissions } from '@appeal/shared';
-import { requireAuth, requireRole } from '../../middleware/auth.js';
+import { requireRole } from '../../middleware/auth.js';
 import { orgController } from './org.controller.js';
 import type { OrgService } from './org.service.js';
 
@@ -22,10 +22,10 @@ import type { OrgService } from './org.service.js';
  * /api/v1/org/invites/{id}:
  *   delete: { tags: [org], summary: Revoke a pending invite (admin), responses: { 204: { description: Revoked }, 404: { description: Not found } } }
  */
-export function orgRouter(deps: { service: OrgService; jwtSecret: string }): Router {
+export function orgRouter(deps: { service: OrgService; requireAuth: RequestHandler }): Router {
   const c = orgController(deps.service);
   const r = Router();
-  r.use(requireAuth(deps.jwtSecret));
+  r.use(deps.requireAuth);
 
   r.get('/', c.getOrg);
   r.get('/users', requireRole(...permissions.viewUsers), c.listUsers);

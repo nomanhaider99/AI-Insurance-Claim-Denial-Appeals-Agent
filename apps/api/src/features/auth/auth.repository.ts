@@ -84,6 +84,20 @@ export function authRepository(db: Db) {
       await db.insert(passwordResetTokens).values(values);
     },
 
+    /** Marks every unused reset token of the user as used. */
+    async invalidateResetTokens(orgId: string, userId: string) {
+      await db
+        .update(passwordResetTokens)
+        .set({ usedAt: new Date() })
+        .where(
+          and(
+            eq(passwordResetTokens.orgId, orgId),
+            eq(passwordResetTokens.userId, userId),
+            isNull(passwordResetTokens.usedAt),
+          ),
+        );
+    },
+
     /** Marks a valid reset token used, atomically. Returns the row or undefined. */
     async consumeResetToken(tokenHash: string) {
       const [row] = await db

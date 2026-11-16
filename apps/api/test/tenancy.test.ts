@@ -26,6 +26,7 @@ let orgB: { id: string };
 let userA: { id: string; email: string };
 let adminB: Session;
 let inviteA: string;
+let adminBId: string;
 
 beforeAll(async () => {
   db = await createTestDb();
@@ -35,6 +36,7 @@ beforeAll(async () => {
   const adminA = await makeUser(db, orgA.id, 'admin');
   userA = await makeUser(db, orgA.id, 'biller');
   const adminBUser = await makeUser(db, orgB.id, 'admin');
+  adminBId = adminBUser.id;
   await makeUser(db, orgB.id, 'reviewer');
 
   const a = await loginAs(app, adminA.email);
@@ -96,7 +98,7 @@ describe('cross-tenant isolation', () => {
   it("a valid token for org B can't be pointed at org A by tampering with claims", async () => {
     // Token signed with the wrong secret (attacker-made) is rejected outright.
     const forged = await signAccessToken(
-      { userId: userA.id, orgId: orgA.id, role: 'admin' },
+      { userId: userA.id, orgId: orgA.id, role: 'admin', sessionVersion: 0 },
       'attacker-secret-attacker-secret-1234',
     );
     const res = await request(app).get('/api/v1/org/users').set('Cookie', `access_token=${forged}`);
@@ -105,7 +107,12 @@ describe('cross-tenant isolation', () => {
 
   it("a genuine token is still scoped: org B's admin id with org A's id in the URL -> 404", async () => {
     const token = await signAccessToken(
-      { userId: '00000000-0000-4000-8000-000000000000', orgId: orgB.id, role: 'admin' },
+      {
+        userId: adminBId,
+        orgId: orgB.id,
+        role: 'admin',
+        sessionVersion: 0,
+      },
       testConfig.jwtAccessSecret,
     );
     const res = await request(app)

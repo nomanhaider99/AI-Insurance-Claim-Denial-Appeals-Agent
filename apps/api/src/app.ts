@@ -4,10 +4,11 @@ import { pinoHttp } from 'pino-http';
 import type { AppConfig } from './config.js';
 import type { Db } from './db/client.js';
 import type { Mailer } from './lib/mailer.js';
-import { logger } from './logger.js';
+import { logger, reqSerializer } from './logger.js';
 import { healthRouter, type HealthChecks } from './routes/health.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
 import { csrfProtection } from './middleware/csrf.js';
+import { requireAuth } from './middleware/auth.js';
 import { auditRequests } from './middleware/audit-requests.js';
 import { authLimiters, type RateLimitStoreFactory } from './middleware/rate-limit.js';
 import { authRouter } from './features/auth/auth.routes.js';
@@ -34,6 +35,7 @@ export function createApp(deps: AppDeps): Express {
   app.use(
     pinoHttp({
       logger,
+      serializers: { req: reqSerializer },
       autoLogging: { ignore: (req) => req.url?.startsWith('/health') ?? false },
     }),
   );
@@ -42,6 +44,7 @@ export function createApp(deps: AppDeps): Express {
 
   app.use(healthRouter(deps.healthChecks));
 
+  const auth = requireAuth({ secret: config.jwtAccessSecret, db });
   const api = Router();
   api.use(csrfProtection(config.webOrigin));
   api.use(auditRequests(db));
@@ -51,12 +54,10 @@ export function createApp(deps: AppDeps): Express {
       service: authService({ db, config, mailer }),
       config,
       limiters: authLimiters(deps.rateLimitStore),
+      requireAuth: auth,
     }),
   );
-  api.use(
-    '/org',
-    orgRouter({ service: orgService({ db, config, mailer }), jwtSecret: config.jwtAccessSecret }),
-  );
+  api.use('/org', orgRouter({ service: orgService({ db, config, mailer }), requireAuth: auth }));
   if (deps.extraRoutes) api.use(deps.extraRoutes);
   app.use('/api/v1', api);
 

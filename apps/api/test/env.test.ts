@@ -28,4 +28,13 @@ describe('parseEnv', () => {
       expect((e as Error).message).not.toContain('super-secret-value');
     }
   });
+
+  it('refuses the console mailer in production (it would log reset/invite links)', () => {
+    expect(() => parseEnv({ ...valid, NODE_ENV: 'production', MAIL_TRANSPORT: 'console' })).toThrow(
+      /MAIL_TRANSPORT/,
+    );
+    expect(
+      parseEnv({ ...valid, NODE_ENV: 'production', MAIL_TRANSPORT: 'disabled' }).TRUST_PROXY,
+    ).toBe(0);
+  });
 });

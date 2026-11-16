@@ -12,13 +12,19 @@ const ISSUER = 'appeal-api';
 const AUDIENCE = 'appeal-web';
 
 export type AuthContext = { userId: string; orgId: string; role: Role };
+export type AccessClaims = AuthContext & { sessionVersion: number };
 
-const claimsSchema = z.object({ sub: z.uuid(), org: z.uuid(), role: roleSchema });
+const claimsSchema = z.object({
+  sub: z.uuid(),
+  org: z.uuid(),
+  role: roleSchema,
+  sv: z.number().int(),
+});
 
 const key = (secret: string) => new TextEncoder().encode(secret);
 
-export function signAccessToken(ctx: AuthContext, secret: string): Promise<string> {
-  return new SignJWT({ org: ctx.orgId, role: ctx.role })
+export function signAccessToken(ctx: AccessClaims, secret: string): Promise<string> {
+  return new SignJWT({ org: ctx.orgId, role: ctx.role, sv: ctx.sessionVersion })
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(ctx.userId)
     .setIssuer(ISSUER)
@@ -32,7 +38,7 @@ export function signAccessToken(ctx: AuthContext, secret: string): Promise<strin
 export async function verifyAccessToken(
   token: string,
   secret: string,
-): Promise<AuthContext | null> {
+): Promise<AccessClaims | null> {
   try {
     const { payload } = await jwtVerify(token, key(secret), {
       algorithms: ['HS256'],
@@ -40,7 +46,12 @@ export async function verifyAccessToken(
       audience: AUDIENCE,
     });
     const claims = claimsSchema.parse(payload);
-    return { userId: claims.sub, orgId: claims.org, role: claims.role };
+    return {
+      userId: claims.sub,
+      orgId: claims.org,
+      role: claims.role,
+      sessionVersion: claims.sv,
+    };
   } catch {
     return null;
   }

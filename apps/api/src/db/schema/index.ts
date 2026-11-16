@@ -62,6 +62,8 @@ export const users = pgTable(
     passwordHash: text('password_hash').notNull(),
     role: roleEnum('role').notNull().default('biller'),
     lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
+    /** Bumped on password reset; access tokens carrying an older version are rejected. */
+    sessionVersion: integer('session_version').notNull().default(0),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

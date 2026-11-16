@@ -10,6 +10,16 @@ const config: NextConfig = {
   outputFileTracingRoot: path.join(import.meta.dirname, '../..'),
   transpilePackages: ['@appeal/shared'],
   poweredByHeader: false,
+  async headers() {
+    return [
+      { source: '/:path*', headers: [{ key: 'Referrer-Policy', value: 'same-origin' }] },
+      // These pages carry one-time tokens in their URL: never send it as Referer.
+      ...['/reset-password', '/accept-invite'].map((source) => ({
+        source,
+        headers: [{ key: 'Referrer-Policy', value: 'no-referrer' }],
+      })),
+    ];
+  },
   async rewrites() {
     return [
       { source: '/api/:path*', destination: `${apiTarget}/api/:path*` },

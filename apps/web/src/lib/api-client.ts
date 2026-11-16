@@ -47,11 +47,18 @@ async function getCsrf(fetchImpl: typeof fetch): Promise<string> {
 function refreshSession(fetchImpl: typeof fetch): Promise<boolean> {
   refreshing ??= (async () => {
     try {
-      const res = await fetchImpl(`${API_URL}/api/v1/auth/refresh`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'X-CSRF-Token': await getCsrf(fetchImpl) },
-      });
+      const attempt = async () =>
+        fetchImpl(`${API_URL}/api/v1/auth/refresh`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'X-CSRF-Token': await getCsrf(fetchImpl) },
+        });
+      let res = await attempt();
+      // Another tab may have replaced the csrf cookie: refetch the token and retry once.
+      if (res.status === 403) {
+        csrfToken = null;
+        res = await attempt();
+      }
       return res.ok;
     } catch {
       return false;

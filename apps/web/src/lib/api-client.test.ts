@@ -141,6 +141,27 @@ describe('apiFetch', () => {
     expect(data).toEqual({ ok: true });
   });
 
+  it('a refresh rejected by a stale CSRF token refetches it and retries, without logging out', async () => {
+    let csrfN = 0;
+    const f = fakeFetch({
+      'GET /api/v1/auth/csrf': () => json(200, { csrfToken: `tok-${++csrfN}` }),
+      'GET /api/v1/org': (_c, n) =>
+        n === 1
+          ? json(401, { error: { code: 'UNAUTHORIZED', message: 'x' } })
+          : json(200, { ok: true }),
+      'POST /api/v1/auth/refresh': (c) =>
+        (c.init.headers as Record<string, string>)['X-CSRF-Token'] === 'tok-2'
+          ? json(200, { ok: true })
+          : json(403, { error: { code: 'FORBIDDEN', message: 'x', details: { reason: 'csrf' } } }),
+    });
+    const onUnauthorized = vi.fn();
+    // Prime a (soon stale) token.
+    await apiFetch('/api/v1/org', okResponseSchema, { fetchImpl: f.impl, onUnauthorized }).catch(
+      () => {},
+    );
+    expect(onUnauthorized).not.toHaveBeenCalled();
+  });
+
   it('fieldErrorsOf maps validation details to fields', () => {
     const e = new ApiError(400, 'VALIDATION_ERROR', 'Invalid', [
       { path: 'email', message: 'Enter a valid email' },

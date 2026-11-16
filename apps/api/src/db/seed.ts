@@ -14,6 +14,12 @@ import { logger } from '../logger.js';
 
 const url = process.env.DATABASE_URL;
 if (!url) throw new Error('DATABASE_URL is required');
+
+// Demo accounts have a documented password. Never create them in a real deployment by accident.
+if (process.env.NODE_ENV === 'production' && process.env.SEED_DEMO_DATA !== 'true') {
+  logger.warn('NODE_ENV=production and SEED_DEMO_DATA is not "true": skipping demo seed');
+  process.exit(0);
+}
 const password = process.env.SEED_PASSWORD ?? 'Demo-Password-123!';
 
 const orgs = [

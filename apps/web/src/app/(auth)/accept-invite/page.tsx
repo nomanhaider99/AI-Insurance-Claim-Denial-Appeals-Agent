@@ -1,17 +1,17 @@
 'use client';
 
-import { Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { acceptInviteSchema, meResponseSchema } from '@appeal/shared';
 import { apiFetch } from '@/lib/api-client';
+import { useUrlToken } from '@/hooks/use-url-token';
 import { meQueryKey } from '@/hooks/use-me';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Field, FormError, useZodForm } from '@/components/form';
 
 function AcceptForm() {
-  const token = useSearchParams().get('token') ?? '';
+  const token = useUrlToken();
   const router = useRouter();
   const qc = useQueryClient();
   const form = useZodForm(acceptInviteSchema, async (data) => {
@@ -23,6 +23,7 @@ function AcceptForm() {
     router.replace('/');
   });
 
+  if (token === undefined) return <p className="text-muted-foreground text-sm">Loading…</p>;
   if (!token) return <FormError>This invite link is missing its token.</FormError>;
   return (
     <form onSubmit={form.onSubmit} className="grid gap-4" noValidate>
@@ -53,9 +54,7 @@ export default function AcceptInvitePage() {
         <CardDescription>Set up your account to accept the invite.</CardDescription>
       </CardHeader>
       <CardContent>
-        <Suspense>
-          <AcceptForm />
-        </Suspense>
+        <AcceptForm />
       </CardContent>
     </Card>
   );

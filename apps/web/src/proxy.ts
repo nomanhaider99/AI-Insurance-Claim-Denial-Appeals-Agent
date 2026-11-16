@@ -17,9 +17,8 @@ export function proxy(req: NextRequest) {
     url.search = `?next=${encodeURIComponent(pathname + search)}`;
     return NextResponse.redirect(url);
   }
-  if (isPublic && hasSession && (pathname === '/login' || pathname === '/register')) {
-    return NextResponse.redirect(new URL('/', req.url));
-  }
+  // Public pages are never bounced back to the app: the session hint can outlive a
+  // session the API has already rejected, and bouncing would loop /login <-> /.
   return NextResponse.next();
 }
 

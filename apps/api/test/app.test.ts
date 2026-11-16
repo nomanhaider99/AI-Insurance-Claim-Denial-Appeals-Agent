@@ -69,6 +69,12 @@ describe('error format', () => {
     router.get('/zod-error', () => {
       z.object({ a: z.string() }).parse({});
     });
+    router.get('/dup', () => {
+      // Shape of a Drizzle-wrapped Postgres unique violation.
+      throw Object.assign(new Error('Failed query'), {
+        cause: Object.assign(new Error('duplicate key'), { code: '23505' }),
+      });
+    });
     router.get('/boom', () => {
       throw new Error('secret internal detail');
     });
@@ -85,6 +91,12 @@ describe('error format', () => {
     const res = await request(errorApp()).get('/api/v1/zod-error');
     expect(res.status).toBe(400);
     expect(res.body.error.details[0].path).toBe('a');
+  });
+
+  it('unique violation -> 409 CONFLICT instead of 500', async () => {
+    const res = await request(errorApp()).get('/api/v1/dup');
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('CONFLICT');
   });
 
   it('unknown error -> 500 without leaking the message', async () => {

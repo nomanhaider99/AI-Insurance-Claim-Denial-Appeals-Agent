@@ -6,17 +6,16 @@ export interface Mailer {
 }
 
 /**
- * Dev stub: logs the email (including its link) instead of sending it.
- * Replace with a real provider before production; MAIL_TRANSPORT=disabled drops mail.
+ * Dev stub: logs the email instead of sending it. Links carry live reset/invite tokens,
+ * so this transport is refused when NODE_ENV=production (see env.ts) and the link is
+ * logged under `devOnlyLink`, a key that exists nowhere else. Replace with a real provider
+ * before production; MAIL_TRANSPORT=disabled drops mail.
  */
 export function createMailer(transport: 'console' | 'disabled'): Mailer {
   return {
     async send(mail) {
       if (transport === 'disabled') return;
-      logger.info(
-        { mail: { to: mail.to, subject: mail.subject, link: mail.link } },
-        'email (stub)',
-      );
+      logger.info({ subject: mail.subject, devOnlyLink: mail.link }, 'email (dev stub)');
     },
   };
 }

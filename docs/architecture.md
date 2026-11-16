@@ -23,8 +23,11 @@ Browser ──> web (Next.js, :3000) ──fetch, cookies──> api (Express, :
 
 - The browser only talks to the web origin; Next.js rewrites `/api/*` and `/health*` to the API (`API_INTERNAL_URL`). Cookies are first-party.
 - Cookies: `access_token` (JWT, 15 min, path `/`), `refresh_token` (opaque, 30 days, path `/api/v1/auth`, stored hashed, rotated on every refresh, reuse revokes the family), `has_session` (hint for the route guard), `csrf_token` (readable; double-submit with `X-CSRF-Token`). All auth cookies are httpOnly + SameSite=Lax; `Secure` unless `COOKIE_SECURE=false`.
-- `requireAuth` → `req.auth = { userId, orgId, role }` from the JWT only. `requireRole(...permissions.x)` uses the shared permission map in `packages/shared/src/auth.ts`.
+- `requireAuth` verifies the JWT, then re-reads the user scoped by the token's org: deleted users are rejected, the **current DB role** is used (demotions apply on the next request), and a `session_version` claim older than the user's (bumped on password reset) is rejected. It sets `req.auth = { userId, orgId, role }`. `requireRole(...permissions.x)` uses the shared permission map in `packages/shared/src/auth.ts`.
 - Repositories take `orgId` first. The only unscoped lookups are by email (login/register/forgot) and by secret token hash (refresh/reset/invite), which identify the row before a session exists.
+- Refresh rotation has a 20s grace window so two tabs refreshing at once aren't treated as theft; replay after that revokes the family.
+- Rate limits: login is limited per IP and per email separately; each sensitive route has its own bucket. `TRUST_PROXY` must equal the number of proxies that _append_ X-Forwarded-For (0 locally — Next's rewrite doesn't; 1 behind an appending ingress). Too high lets clients spoof IPs.
+- Logs never contain tokens: pino-http logs path only (no query/headers), `*.link`/`*.email`/referer are redacted, and `MAIL_TRANSPORT=console` is refused in production. Reset/invite pages strip `?token=` from the URL on load and send `Referrer-Policy: no-referrer`.
 - Audit: services write semantic rows (`auth.login`, `user.role_changed`, ...); `auditRequests` adds `http.<method>` rows for every authenticated mutation.
 - Tests run against PGlite (in-process Postgres + pgvector) with the real migrations, so tenancy SQL is exercised without Docker.
 

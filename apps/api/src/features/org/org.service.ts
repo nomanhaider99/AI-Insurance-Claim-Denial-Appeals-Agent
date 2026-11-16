@@ -46,14 +46,22 @@ export function orgService(deps: { db: Db; config: AppConfig; mailer: Mailer }) 
     async updateRole(ctx: Ctx, id: string, input: unknown): Promise<UserDto> {
       const { role } = updateRoleSchema.parse(input);
       const orgId = ctx.auth.orgId;
-      const user = await users.findById(orgId, id);
-      if (!user) throw new AppError('NOT_FOUND', 'User not found');
-      if (user.role === role) return toUserDto(user);
-      if (user.role === 'admin' && (await users.countByRole(orgId, 'admin')) <= 1) {
-        throw new AppError('CONFLICT', 'An organization must keep at least one admin');
-      }
-      const updated = await users.updateRole(orgId, id, role);
-      if (!updated) throw new AppError('NOT_FOUND', 'User not found');
+      // Lock the org's admin rows first so two admins demoting each other at once
+      // can't leave the org with none: the second transaction re-reads after the first commits.
+      const { user, updated } = await db.transaction(async (tx) => {
+        const txUsers = usersRepository(tx);
+        const adminIds = await txUsers.lockAdminIds(orgId);
+        const user = await txUsers.findById(orgId, id);
+        if (!user) throw new AppError('NOT_FOUND', 'User not found');
+        if (user.role === role) return { user, updated: user };
+        if (user.role === 'admin' && adminIds.length <= 1) {
+          throw new AppError('CONFLICT', 'An organization must keep at least one admin');
+        }
+        const updated = await txUsers.updateRole(orgId, id, role);
+        if (!updated) throw new AppError('NOT_FOUND', 'User not found');
+        return { user, updated };
+      });
+      if (user.role === role) return toUserDto(updated);
       await audit(
         db,
         actor(ctx),
@@ -73,8 +81,11 @@ export function orgService(deps: { db: Db; config: AppConfig; mailer: Mailer }) 
 
     async createInvite(ctx: Ctx, input: unknown): Promise<InviteDto> {
       const { email, role } = createInviteSchema.parse(input);
-      if (await users.findByEmailForAuth(email)) {
-        throw new AppError('CONFLICT', 'A user with this email already exists');
+      // Only reveal existing accounts within the caller's own org (no cross-org probing).
+      // An address registered elsewhere gets an invite that fails cleanly at acceptance.
+      const existing = await users.findByEmailForAuth(email);
+      if (existing?.orgId === ctx.auth.orgId) {
+        throw new AppError('CONFLICT', 'This person is already a member');
       }
       const token = randomToken();
       const invite = await db.transaction(async (tx) => {

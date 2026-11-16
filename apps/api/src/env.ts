@@ -16,16 +16,29 @@ const envSchema = z.object({
   /** Public URL of the web app, used in emailed links. */
   APP_URL: z.url().default('http://localhost:3000'),
   COOKIE_SECURE: z.stringbool().default(true),
-  /** Express "trust proxy" hop count (1 behind the Next.js proxy / ingress). */
-  TRUST_PROXY: z.coerce.number().int().min(0).default(1),
+  /**
+   * Express "trust proxy" hop count = number of proxies that APPEND the client IP to
+   * X-Forwarded-For. The Next.js rewrite does not, so: 0 locally (default), 1 behind an
+   * ingress that appends it. Too high lets clients spoof their IP and dodge rate limits.
+   */
+  TRUST_PROXY: z.coerce.number().int().min(0).default(0),
+  /** "console" logs emails (with links) and is refused in production. */
   MAIL_TRANSPORT: z.enum(['console', 'disabled']).default('console'),
 });
+
+const refinedEnvSchema = envSchema.refine(
+  (e) => !(e.NODE_ENV === 'production' && e.MAIL_TRANSPORT === 'console'),
+  {
+    path: ['MAIL_TRANSPORT'],
+    message: 'console mail logs reset/invite links; not allowed in production',
+  },
+);
 
 export type Env = z.infer<typeof envSchema>;
 
 /** Parses env and throws an error naming only the invalid keys (never their values). */
 export function parseEnv(source: NodeJS.ProcessEnv): Env {
-  const result = envSchema.safeParse(source);
+  const result = refinedEnvSchema.safeParse(source);
   if (!result.success) {
     const keys = result.error.issues.map((i) => i.path.join('.')).join(', ');
     throw new Error(`Invalid environment variables: ${keys}`);

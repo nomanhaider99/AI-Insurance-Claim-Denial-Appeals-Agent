@@ -36,6 +36,8 @@ export type IssuedTokens = { accessToken: string; refreshToken: string };
 type Ctx = { ip?: string };
 
 const INVALID_LOGIN = 'Invalid email or password';
+/** Concurrent refreshes (e.g. two tabs) within this window aren't treated as token theft. */
+const REFRESH_REUSE_GRACE_MS = 20_000;
 
 export function authService(deps: { db: Db; config: AppConfig; mailer: Mailer }) {
   const { db, config, mailer } = deps;
@@ -52,7 +54,7 @@ export function authService(deps: { db: Db; config: AppConfig; mailer: Mailer })
       expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
     });
     const accessToken = await signAccessToken(
-      { userId: user.id, orgId: user.orgId, role: user.role },
+      { userId: user.id, orgId: user.orgId, role: user.role, sessionVersion: user.sessionVersion },
       config.jwtAccessSecret,
     );
     return { tokens: { accessToken, refreshToken }, refreshTokenId: row.id };
@@ -131,7 +133,14 @@ export function authService(deps: { db: Db; config: AppConfig; mailer: Mailer })
       const row = await repo.findRefreshTokenByHash(sha256(rawToken));
       if (!row) throw new AppError('UNAUTHORIZED', 'Session expired');
 
-      if (row.revokedAt) {
+      // Two tabs refreshing with the same cookie at the same moment is normal, not theft:
+      // within a short grace window after rotation, the old token may rotate again.
+      const inGrace =
+        row.revokedAt !== null &&
+        row.replacedById !== null &&
+        Date.now() - row.revokedAt.getTime() < REFRESH_REUSE_GRACE_MS;
+
+      if (row.revokedAt && !inGrace) {
         await repo.revokeFamily(row.orgId, row.familyId);
         await audit(
           db,
@@ -150,13 +159,10 @@ export function authService(deps: { db: Db; config: AppConfig; mailer: Mailer })
       const user = await users.findById(row.orgId, row.userId);
       if (!user) throw new AppError('UNAUTHORIZED', 'Session expired');
 
-      // Role is re-read from the DB here, so role changes apply at the next refresh.
       const { tokens, refreshTokenId } = await issueTokens(user, row.familyId);
-      if (!(await repo.revokeRefreshToken(row.orgId, row.id, refreshTokenId))) {
-        // Lost a race with another refresh using the same token: treat as reuse.
-        await repo.revokeFamily(row.orgId, row.familyId);
-        throw new AppError('UNAUTHORIZED', 'Session expired');
-      }
+      // If a concurrent refresh already revoked it, that's the grace case above: both
+      // callers keep valid tokens in the same family.
+      if (!inGrace) await repo.revokeRefreshToken(row.orgId, row.id, refreshTokenId);
       return tokens;
     },
 
@@ -172,6 +178,8 @@ export function authService(deps: { db: Db; config: AppConfig; mailer: Mailer })
       const user = await users.findByEmailForAuth(data.email);
       if (!user) return;
       const token = randomToken();
+      // Only the newest reset link works.
+      await repo.invalidateResetTokens(user.orgId, user.id);
       await repo.insertResetToken({
         orgId: user.orgId,
         userId: user.id,
@@ -196,8 +204,10 @@ export function authService(deps: { db: Db; config: AppConfig; mailer: Mailer })
       const row = await db.transaction(async (tx) => {
         const consumed = await authRepository(tx).consumeResetToken(sha256(data.token));
         if (!consumed) return undefined;
+        // Also kills every existing access token (requireAuth checks session_version).
         await usersRepository(tx).updatePassword(consumed.orgId, consumed.userId, passwordHash);
         await authRepository(tx).revokeAllForUser(consumed.orgId, consumed.userId);
+        await authRepository(tx).invalidateResetTokens(consumed.orgId, consumed.userId);
         return consumed;
       });
       if (!row) throw new AppError('VALIDATION_ERROR', 'This reset link is invalid or has expired');

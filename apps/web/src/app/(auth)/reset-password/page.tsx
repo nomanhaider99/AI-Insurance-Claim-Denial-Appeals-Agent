@@ -1,22 +1,23 @@
 'use client';
 
-import { Suspense, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
 import { okResponseSchema, resetPasswordSchema } from '@appeal/shared';
 import { apiFetch } from '@/lib/api-client';
+import { useUrlToken } from '@/hooks/use-url-token';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Field, FormError, useZodForm } from '@/components/form';
 
 function ResetForm() {
-  const token = useSearchParams().get('token') ?? '';
+  const token = useUrlToken();
   const [done, setDone] = useState(false);
   const form = useZodForm(resetPasswordSchema, async (data) => {
     await apiFetch('/api/v1/auth/password/reset', okResponseSchema, { method: 'POST', body: data });
     setDone(true);
   });
 
+  if (token === undefined) return <p className="text-muted-foreground text-sm">Loading…</p>;
   if (!token) return <FormError>This reset link is missing its token.</FormError>;
   if (done) {
     return (
@@ -55,9 +56,7 @@ export default function ResetPasswordPage() {
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <Suspense>
-          <ResetForm />
-        </Suspense>
+        <ResetForm />
       </CardContent>
     </Card>
   );

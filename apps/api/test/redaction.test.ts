@@ -2,7 +2,7 @@ import { Writable } from 'node:stream';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { pino } from 'pino';
 import { and, eq } from 'drizzle-orm';
-import { redactPaths } from '../src/logger.js';
+import { redactPaths, reqSerializer } from '../src/logger.js';
 import type { Db } from '../src/db/client.js';
 import { auditLogs } from '../src/db/schema/index.js';
 import { createTestDb, loginAs, makeApp, makeOrg, makeUser } from './helpers.js';
@@ -23,7 +23,14 @@ describe('log redaction', () => {
         refreshToken: 'rt-synthetic',
         patientName: 'Jane Synthetic',
       },
-      req: { headers: { authorization: 'Bearer abc', cookie: 'access_token=xyz' } },
+      req: {
+        headers: {
+          authorization: 'Bearer abc',
+          cookie: 'access_token=xyz',
+          referer: 'http://localhost:3000/reset-password?token=referer-secret',
+        },
+      },
+      mail: { email: 'person@example.test', link: 'http://x/reset-password?token=link-secret' },
     });
     const out = lines.join('');
     for (const secret of [
@@ -32,10 +39,20 @@ describe('log redaction', () => {
       'Jane Synthetic',
       'Bearer abc',
       'xyz',
+      'referer-secret',
+      'link-secret',
+      'person@example.test',
     ]) {
       expect(out).not.toContain(secret);
     }
     expect(out).toContain('[REDACTED]');
+  });
+});
+
+describe('request serializer', () => {
+  it('logs the path only: no query string, no headers', () => {
+    const out = reqSerializer({ id: 1, method: 'GET', url: '/accept-invite?token=secret' });
+    expect(out).toEqual({ id: 1, method: 'GET', url: '/accept-invite' });
   });
 });
 

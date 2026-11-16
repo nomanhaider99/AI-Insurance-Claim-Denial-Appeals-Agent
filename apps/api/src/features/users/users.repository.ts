@@ -1,4 +1,4 @@
-import { and, asc, count, eq } from 'drizzle-orm';
+import { and, asc, count, eq, sql } from 'drizzle-orm';
 import type { Role, UserDto } from '@appeal/shared';
 import type { Db } from '../../db/client.js';
 import { users } from '../../db/schema/index.js';
@@ -43,12 +43,14 @@ export function usersRepository(db: Db) {
       return { rows, total: total?.n ?? 0 };
     },
 
-    async countByRole(orgId: string, role: Role): Promise<number> {
-      const [row] = await db
-        .select({ n: count() })
+    /** Row-locks the org's admins (use inside a transaction) and returns their ids. */
+    async lockAdminIds(orgId: string): Promise<string[]> {
+      const rows = await db
+        .select({ id: users.id })
         .from(users)
-        .where(and(eq(users.orgId, orgId), eq(users.role, role)));
-      return row?.n ?? 0;
+        .where(and(eq(users.orgId, orgId), eq(users.role, 'admin')))
+        .for('update');
+      return rows.map((r) => r.id);
     },
 
     async updateRole(orgId: string, id: string, role: Role): Promise<UserRow | undefined> {
@@ -60,10 +62,11 @@ export function usersRepository(db: Db) {
       return row;
     },
 
+    /** Sets a new password and invalidates every existing access token (session_version + 1). */
     async updatePassword(orgId: string, id: string, passwordHash: string): Promise<void> {
       await db
         .update(users)
-        .set({ passwordHash })
+        .set({ passwordHash, sessionVersion: sql`${users.sessionVersion} + 1` })
         .where(and(eq(users.orgId, orgId), eq(users.id, id)));
     },
 
