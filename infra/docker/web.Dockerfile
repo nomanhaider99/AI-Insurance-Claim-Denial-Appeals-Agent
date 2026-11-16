@@ -3,9 +3,9 @@ RUN npm install -g pnpm@12.15.0
 WORKDIR /app
 
 FROM base AS build
-# Inlined into the client bundle at build time: the URL the *browser* uses to reach the API.
-ARG NEXT_PUBLIC_API_URL=http://localhost:4000
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL NEXT_TELEMETRY_DISABLED=1
+# Where the Next.js server proxies /api/* (baked into the rewrites at build time).
+ARG API_INTERNAL_URL=http://api:4000
+ENV API_INTERNAL_URL=$API_INTERNAL_URL NEXT_TELEMETRY_DISABLED=1
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
 COPY apps/web/package.json apps/web/

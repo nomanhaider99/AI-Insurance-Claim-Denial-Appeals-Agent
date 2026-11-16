@@ -1,12 +1,26 @@
+import { RedisStore, type RedisReply } from 'rate-limit-redis';
 import { env } from './env.js';
+import { appConfig } from './config.js';
 import { logger } from './logger.js';
 import { createApp } from './app.js';
 import { createClients } from './lib/clients.js';
+import { createMailer } from './lib/mailer.js';
 import { systemQueue } from './jobs/queues.js';
 
 const config = env();
 const clients = createClients(config);
-const app = createApp({ healthChecks: clients.healthChecks, webOrigin: config.WEB_ORIGIN });
+const app = createApp({
+  db: clients.db,
+  config: appConfig(config),
+  mailer: createMailer(config.MAIL_TRANSPORT),
+  healthChecks: clients.healthChecks,
+  rateLimitStore: (prefix) =>
+    new RedisStore({
+      prefix,
+      sendCommand: (command: string, ...args: string[]) =>
+        clients.redis.call(command, ...args) as Promise<RedisReply>,
+    }),
+});
 
 const server = app.listen(config.API_PORT, () => {
   logger.info({ port: config.API_PORT }, 'api listening');

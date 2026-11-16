@@ -1,19 +1,23 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { Router } from 'express';
 import { z } from 'zod';
 import { apiErrorSchema, readinessResponseSchema } from '@appeal/shared';
-import { createApp } from '../src/app.js';
 import { AppError } from '../src/lib/errors.js';
+import type { Db } from '../src/db/client.js';
 import type { HealthChecks } from '../src/routes/health.js';
+import { createTestDb, healthyChecks, makeApp } from './helpers.js';
 
-const ok = async () => {};
 const fail = async () => {
   throw new Error('down');
 };
-const allOk: HealthChecks = { database: ok, redis: ok, storage: ok };
-const make = (healthChecks: HealthChecks = allOk) =>
-  createApp({ healthChecks, webOrigin: 'http://localhost:3000' });
+
+let db: Db;
+beforeAll(async () => {
+  db = await createTestDb();
+});
+
+const make = (healthChecks: HealthChecks = healthyChecks) => makeApp(db, { healthChecks });
 
 describe('health', () => {
   it('GET /health returns ok without touching dependencies', async () => {
@@ -32,7 +36,7 @@ describe('health', () => {
   });
 
   it('GET /health/ready returns 503 and names the failing dependency', async () => {
-    const res = await request(make({ ...allOk, redis: fail })).get('/health/ready');
+    const res = await request(make({ ...healthyChecks, redis: fail })).get('/health/ready');
     expect(res.status).toBe(503);
     expect(res.body).toEqual({
       status: 'degraded',
@@ -68,11 +72,7 @@ describe('error format', () => {
     router.get('/boom', () => {
       throw new Error('secret internal detail');
     });
-    return createApp({
-      healthChecks: allOk,
-      webOrigin: 'http://localhost:3000',
-      apiRouter: router,
-    });
+    return makeApp(db, { extraRoutes: router });
   };
 
   it('AppError keeps its code and status', async () => {

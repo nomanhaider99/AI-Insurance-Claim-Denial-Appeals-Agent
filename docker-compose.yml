@@ -79,7 +79,8 @@ services:
   migrate:
     build: { context: ., dockerfile: infra/docker/api.Dockerfile }
     image: appeal-ai/api:dev
-    command: ['node', 'dist/db/migrate.js']
+    # Applies migrations, then seeds synthetic demo orgs/users (idempotent).
+    command: ['sh', '-c', 'node dist/db/migrate.js && node dist/db/seed.js']
     environment: *api-env
     depends_on:
       postgres: { condition: service_healthy }
@@ -119,7 +120,7 @@ services:
       context: .
       dockerfile: infra/docker/web.Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: http://localhost:4000
+        API_INTERNAL_URL: http://api:4000
     ports: ['3000:3000']
     depends_on:
       api: { condition: service_healthy }

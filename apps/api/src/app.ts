@@ -1,42 +1,64 @@
-import express, { type Express, type Router } from 'express';
+import express, { Router, type Express } from 'express';
+import cookieParser from 'cookie-parser';
 import { pinoHttp } from 'pino-http';
+import type { AppConfig } from './config.js';
+import type { Db } from './db/client.js';
+import type { Mailer } from './lib/mailer.js';
 import { logger } from './logger.js';
 import { healthRouter, type HealthChecks } from './routes/health.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
+import { csrfProtection } from './middleware/csrf.js';
+import { auditRequests } from './middleware/audit-requests.js';
+import { authLimiters, type RateLimitStoreFactory } from './middleware/rate-limit.js';
+import { authRouter } from './features/auth/auth.routes.js';
+import { authService } from './features/auth/auth.service.js';
+import { orgRouter } from './features/org/org.routes.js';
+import { orgService } from './features/org/org.service.js';
 
 export type AppDeps = {
+  db: Db;
+  config: AppConfig;
+  mailer: Mailer;
   healthChecks: HealthChecks;
-  webOrigin: string;
-  /** Feature routes, mounted under /api/v1 (Phase 2+). */
-  apiRouter?: Router;
+  /** Shared rate-limit store (Redis in the app). Omitted in tests: in-memory per app. */
+  rateLimitStore?: RateLimitStoreFactory;
+  /** Extra routes mounted under /api/v1 after the built-in ones (tests). */
+  extraRoutes?: Router;
 };
 
 export function createApp(deps: AppDeps): Express {
+  const { db, config, mailer } = deps;
   const app = express();
   app.disable('x-powered-by');
+  app.set('trust proxy', config.trustProxy);
   app.use(
     pinoHttp({
       logger,
       autoLogging: { ignore: (req) => req.url?.startsWith('/health') ?? false },
     }),
   );
-  // Minimal CORS for the web app; replaced by a full cookie/CSRF-aware setup in Phase 2.
-  app.use((req, res, next) => {
-    res.setHeader('Access-Control-Allow-Origin', deps.webOrigin);
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-    res.setHeader('Vary', 'Origin');
-    if (req.method === 'OPTIONS') {
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-      res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,PUT,DELETE');
-      res.sendStatus(204);
-      return;
-    }
-    next();
-  });
+  app.use(cookieParser());
   app.use(express.json({ limit: '1mb' }));
 
   app.use(healthRouter(deps.healthChecks));
-  if (deps.apiRouter) app.use('/api/v1', deps.apiRouter);
+
+  const api = Router();
+  api.use(csrfProtection(config.webOrigin));
+  api.use(auditRequests(db));
+  api.use(
+    '/auth',
+    authRouter({
+      service: authService({ db, config, mailer }),
+      config,
+      limiters: authLimiters(deps.rateLimitStore),
+    }),
+  );
+  api.use(
+    '/org',
+    orgRouter({ service: orgService({ db, config, mailer }), jwtSecret: config.jwtAccessSecret }),
+  );
+  if (deps.extraRoutes) api.use(deps.extraRoutes);
+  app.use('/api/v1', api);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

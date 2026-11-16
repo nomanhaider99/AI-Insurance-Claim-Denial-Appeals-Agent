@@ -8,6 +8,7 @@ const valid = {
   S3_BUCKET: 'b',
   S3_ACCESS_KEY: 'k',
   S3_SECRET_KEY: 'super-secret-value',
+  JWT_ACCESS_SECRET: 'test-only-jwt-secret-0123456789-abcdef',
 };
 
 describe('parseEnv', () => {

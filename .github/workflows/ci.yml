@@ -50,13 +50,36 @@ jobs:
       - name: Liveness, web, schema, worker
         run: |
           curl -fsS http://localhost:4000/health | grep -q '"ok"'
-          for i in $(seq 1 30); do curl -fsS -o /dev/null http://localhost:3000 && break; sleep 2; done
-          curl -fsS http://localhost:3000 | grep -q 'AppealAI'
+          for i in $(seq 1 30); do curl -fsS -o /dev/null http://localhost:3000/login && break; sleep 2; done
+          curl -fsSL http://localhost:3000/login | grep -q 'AppealAI'
           docker compose exec -T postgres psql -U appeal -d appeal -tAc \
             "select count(*) from information_schema.tables where table_schema='public' and table_name in ('organizations','users','claims','denials','documents','appeals','policy_docs','policy_chunks','audit_logs')" | grep -qx 9
           docker compose exec -T postgres psql -U appeal -d appeal -tAc "select 1 from pg_extension where extname='vector'" | grep -qx 1
           for i in $(seq 1 20); do docker compose logs worker | grep -q 'heartbeat processed' && exit 0; sleep 2; done
           exit 1
+      - name: Auth through the web proxy (seeded synthetic users)
+        run: |
+          set -x
+          WEB=http://localhost:3000
+          # Unauthenticated page request is redirected to /login.
+          curl -sS -o /dev/null -w '%{http_code} %{redirect_url}\n' $WEB/ | grep -E '^30[78] .*/login'
+          login() { # $1=jar $2=email
+            csrf=$(curl -fsS -c "$1" -b "$1" $WEB/api/v1/auth/csrf | jq -r .csrfToken)
+            curl -fsS -c "$1" -b "$1" -H "X-CSRF-Token: $csrf" -H "Origin: $WEB" -H 'Content-Type: application/json' \
+              -d "{\"email\":\"$2\",\"password\":\"Demo-Password-123!\"}" $WEB/api/v1/auth/login > /dev/null
+          }
+          login admin.jar admin@demo-clinic.example.test
+          curl -fsS -b admin.jar $WEB/api/v1/auth/me | jq -e '.user.role == "admin"'
+          curl -fsS -b admin.jar $WEB/api/v1/org/users | jq -e '[.data[].email] | all(endswith("@demo-clinic.example.test"))'
+          # Authenticated page now renders instead of redirecting.
+          test "$(curl -sS -o /dev/null -w '%{http_code}' -b admin.jar $WEB/settings/users)" = 200
+          # A biller is forbidden from the users list.
+          login biller.jar biller@demo-clinic.example.test
+          test "$(curl -sS -o /dev/null -w '%{http_code}' -b biller.jar $WEB/api/v1/org/users)" = 403
+          # Cross-tenant: org B's admin can't read org A's users.
+          login other.jar admin@sample-health.example.test
+          A_ID=$(curl -fsS -b admin.jar $WEB/api/v1/auth/me | jq -r .user.id)
+          test "$(curl -sS -o /dev/null -w '%{http_code}' -b other.jar $WEB/api/v1/org/users/$A_ID)" = 404
       - name: Service status and logs
         if: always()
         run: |

@@ -12,6 +12,13 @@ const envSchema = z.object({
   S3_BUCKET: z.string().min(1),
   S3_ACCESS_KEY: z.string().min(1),
   S3_SECRET_KEY: z.string().min(1),
+  JWT_ACCESS_SECRET: z.string().min(32),
+  /** Public URL of the web app, used in emailed links. */
+  APP_URL: z.url().default('http://localhost:3000'),
+  COOKIE_SECURE: z.stringbool().default(true),
+  /** Express "trust proxy" hop count (1 behind the Next.js proxy / ingress). */
+  TRUST_PROXY: z.coerce.number().int().min(0).default(1),
+  MAIL_TRANSPORT: z.enum(['console', 'disabled']).default('console'),
 });
 
 export type Env = z.infer<typeof envSchema>;

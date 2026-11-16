@@ -61,10 +61,72 @@ export const users = pgTable(
     name: text('name').notNull(),
     passwordHash: text('password_hash').notNull(),
     role: roleEnum('role').notNull().default('biller'),
+    lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [uniqueIndex('users_email_uq').on(t.email), index('users_org_idx').on(t.orgId)],
+);
+
+/** Opaque refresh tokens, stored hashed. Rotated on every use; reuse revokes the family. */
+export const refreshTokens = pgTable(
+  'refresh_tokens',
+  {
+    id: id(),
+    orgId: orgId(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    familyId: uuid('family_id').notNull(),
+    tokenHash: text('token_hash').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    replacedById: uuid('replaced_by_id'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex('refresh_tokens_hash_uq').on(t.tokenHash),
+    index('refresh_tokens_org_user_idx').on(t.orgId, t.userId),
+    index('refresh_tokens_family_idx').on(t.familyId),
+  ],
+);
+
+export const passwordResetTokens = pgTable(
+  'password_reset_tokens',
+  {
+    id: id(),
+    orgId: orgId(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    tokenHash: text('token_hash').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    usedAt: timestamp('used_at', { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex('password_reset_tokens_hash_uq').on(t.tokenHash),
+    index('password_reset_tokens_org_user_idx').on(t.orgId, t.userId),
+  ],
+);
+
+export const invites = pgTable(
+  'invites',
+  {
+    id: id(),
+    orgId: orgId(),
+    email: text('email').notNull(),
+    role: roleEnum('role').notNull(),
+    tokenHash: text('token_hash').notNull(),
+    invitedBy: uuid('invited_by').references(() => users.id, { onDelete: 'set null' }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex('invites_hash_uq').on(t.tokenHash),
+    index('invites_org_email_idx').on(t.orgId, t.email),
+  ],
 );
 
 export const claims = pgTable(
